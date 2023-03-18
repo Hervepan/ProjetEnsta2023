@@ -64,6 +64,11 @@ namespace Geometry
             return (double*)m_setOfPoints.data();
         }
 
+        size_t mpi_size()
+        {
+            return 2*m_setOfPoints.size();
+        }
+        
         void removeAPoint( std::size_t t_index )
         {
             assert(t_index < numberOfPoints() );

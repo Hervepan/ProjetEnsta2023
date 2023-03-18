@@ -68,6 +68,13 @@ namespace Simulation
             m_centers_and_intensities[3*lastIndex+2] = t_intensity;
         }
 
+        double* data() { return (double*)m_centers_and_intensities.data(); }
+        double const* data() const { return (double const*)m_centers_and_intensities.data(); }
+        
+        size_t mpi_size()
+        {
+            return m_centers_and_intensities.size();
+        }
         vector computeSpeed( point const& a_point ) const;
 
         Vortices& operator = ( Vortices const& ) = default;

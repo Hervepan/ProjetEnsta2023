@@ -100,6 +100,11 @@ namespace Numeric
         {
             return m_velocityField[iCell*m_width+jCell];
         }
+        
+        size_t mpi_size()
+        {
+            return 2*m_velocityField.size();
+        }
 
         point updatePosition( point const& pt ) const;
 
