@@ -125,6 +125,10 @@ int main( int nargs, char* argv[] )
     auto grid     = std::get<2>(config);
     auto cloud    = std::get<3>(config);
 
+    int gridSize = grid.cellGeometry().first * grid.cellGeometry().second;
+    int vorticesSize = vortices.numberOfVortices()*3;
+    int cloudSize = cloud.numberOfPoints()*2;
+
     grid.updateVelocityField(vortices);
     bool advance = false;
     bool animate=false;
@@ -199,12 +203,12 @@ int main( int nargs, char* argv[] )
             if (animate | advance) {
                 // get the next state
                 if (isMobile) {
-                    MPI_Recv(grid.data(), grid.mpi_size(), MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
-                    MPI_Recv(vortices.data(), vortices.mpi_size(), MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
-                    MPI_Recv(cloud.data(), cloud.mpi_size(), MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
+                    MPI_Recv(grid.data(), gridSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
+                    MPI_Recv(vortices.data(), vorticesSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
+                    MPI_Recv(cloud.data(), cloudSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
                 } else {
-                    MPI_Recv(grid.data(), grid.mpi_size(), MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
-                    MPI_Recv(cloud.data(), cloud.mpi_size(), MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
+                    MPI_Recv(grid.data(), gridSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
+                    MPI_Recv(cloud.data(), cloudSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
                 }
             }
             myScreen.clear(sf::Color::Black);
@@ -226,9 +230,6 @@ int main( int nargs, char* argv[] )
 
         while (running) {
             auto start = std::chrono::system_clock::now();
-
-            bool advance = false;
-
             int flag = 0;
             MPI_Iprobe(0, 0, MPI_COMM_WORLD, &flag, &status);
             if (flag)
@@ -245,14 +246,14 @@ int main( int nargs, char* argv[] )
             if (animate | advance) {
                 if (isMobile) {
                     cloud = Numeric::solve_RK4_movable_vortices(dt, grid, vortices, cloud);
-                    MPI_Send(grid.data(), grid.mpi_size(), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
-                    MPI_Send(vortices.data(), vortices.mpi_size(), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
-                    MPI_Send(cloud.data(), cloud.mpi_size(), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+                    MPI_Send(grid.data(), gridSize, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+                    MPI_Send(vortices.data(), vorticesSize, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+                    MPI_Send(cloud.data(), cloudSize, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
 
                 } else {
                     cloud = Numeric::solve_RK4_fixed_vortices(dt, grid, cloud);
-                    MPI_Send(grid.data(), grid.mpi_size(), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
-                    MPI_Send(cloud.data(), cloud.mpi_size(), MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+                    MPI_Send(grid.data(), gridSize, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+                    MPI_Send(cloud.data(), cloudSize, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
 
                 }
             }
