@@ -15,7 +15,7 @@ Geometry::generatePointsIn(std::size_t t_nbPoints, const Rectangle &t_area)
     double hy = dy/nbPointsY;
 
     CloudOfPoints cloud{nbPointsX*nbPointsY};
-
+    #pragma omp parallel for
     for ( std::size_t ix=0; ix<nbPointsX; ++ix)
     {
         for (std::size_t jy=0; jy<nbPointsY; ++jy)

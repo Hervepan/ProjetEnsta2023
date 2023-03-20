@@ -2,6 +2,8 @@
 #define _POINT_HPP_
 #include <string>
 #include <cmath>
+#include <omp.h>
+
 
 namespace Geometry
 {

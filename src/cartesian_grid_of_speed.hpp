@@ -94,7 +94,7 @@ namespace Numeric
 
         double getStep() const { return m_step; }
 
-        void updateVelocityField( Simulation::Vortices const& t_vortices );
+        void updateVelocityField( Simulation::Vortices const& t_vortices);
         
         vector getVelocity( std::size_t iCell, std::size_t jCell ) const 
         {

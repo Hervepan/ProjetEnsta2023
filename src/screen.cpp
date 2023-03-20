@@ -6,6 +6,7 @@
 #include <iostream>
 #include <locale>
 #include <cassert>
+#include <omp.h>
 
 
 Graphisme::Screen::Screen( std::pair<std::size_t,std::size_t> const& t_geometry,
@@ -74,6 +75,7 @@ Graphisme::Screen::displayVelocityField( Numeric::CartesianGridOfSpeed const& gr
     }
 
     // Affichage des vecteurs :
+
     for (std::size_t jy=0; jy<nbCells.second; ++jy)
     {
         for (std::size_t ix=0; ix<nbCells.first; ++ix)
@@ -127,7 +129,7 @@ Graphisme::Screen::displayParticles( Numeric::CartesianGridOfSpeed const& grid, 
     }
     assert(m_particles.getVertexCount() == points.numberOfPoints());
     // Affichage des particules en 3/4 transparents :
-    
+    #pragma omp parallel for 
     for (std::size_t iPt=0; iPt<points.numberOfPoints(); ++iPt)
     {
         m_particles[iPt].position = sf::Vector2f{

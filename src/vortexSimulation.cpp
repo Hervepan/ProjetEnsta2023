@@ -94,9 +94,19 @@ auto readConfigFile( std::ifstream& input )
 int main( int nargs, char* argv[] )
 {
     MPI_Init(&nargs, &argv);
-    int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    int rank, size, calcSize, calcRank;
+    MPI_Comm global;
+    MPI_Comm calcul;
+    MPI_Comm_dup(MPI_COMM_WORLD,&global);
+    MPI_Comm_rank(global, &rank);
+    MPI_Comm_size(global, &size);
+
+    int color = (rank == 0) ? 0 : 1;
+
+    //Create a new communicator for the process that do calculation
+    MPI_Comm_split(global, color, rank - 1, &calcul);
+    MPI_Comm_size(calcul, &calcSize);
+    MPI_Comm_rank(calcul, &calcRank);
     MPI_Request request = MPI_REQUEST_NULL;
     MPI_Status status;
 
@@ -120,14 +130,20 @@ int main( int nargs, char* argv[] )
     }
 
 
+
     auto vortices = std::get<0>(config);
     auto isMobile = std::get<1>(config);
     auto grid     = std::get<2>(config);
     auto cloud    = std::get<3>(config);
 
+    grid.updateVelocityField(vortices);
+
     int gridSize = grid.cellGeometry().first * grid.cellGeometry().second;
     int vorticesSize = vortices.numberOfVortices()*3;
     int cloudSize = cloud.numberOfPoints()*2;
+
+    //We calculate the size of the uneven batch in case the number of points is not dividable by the number of process 
+    int unevenBatch= cloudSize - ((int) cloudSize/calcSize)*(calcSize - 1);
 
     grid.updateVelocityField(vortices);
     bool advance = false;
@@ -188,10 +204,10 @@ int main( int nargs, char* argv[] )
 
                 if (send)
                 {
-                    MPI_Isend(&animate, 1, MPI_CXX_BOOL, 1, 0, MPI_COMM_WORLD, &request);
-                    MPI_Isend(&advance, 1, MPI_CXX_BOOL, 1, 0, MPI_COMM_WORLD, &request);
-                    MPI_Isend(&running, 1, MPI_CXX_BOOL, 1, 0, MPI_COMM_WORLD, &request);
-                    MPI_Isend(&dt, 1, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &request);
+                    MPI_Isend(&animate, 1, MPI_CXX_BOOL, 1, 0, global, &request);
+                    MPI_Isend(&advance, 1, MPI_CXX_BOOL, 1, 0, global, &request);
+                    MPI_Isend(&running, 1, MPI_CXX_BOOL, 1, 0, global, &request);
+                    MPI_Isend(&dt, 1, MPI_DOUBLE, 1, 0, global, &request);
                 }
 
                 if (!running)
@@ -203,12 +219,12 @@ int main( int nargs, char* argv[] )
             if (animate | advance) {
                 // get the next state
                 if (isMobile) {
-                    MPI_Recv(grid.data(), gridSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
-                    MPI_Recv(vortices.data(), vorticesSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
-                    MPI_Recv(cloud.data(), cloudSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
+                    MPI_Recv(grid.data(), gridSize, MPI_DOUBLE, 1, 0, global, &status);
+                    MPI_Recv(vortices.data(), vorticesSize, MPI_DOUBLE, 1, 0, global, &status);
+                    MPI_Recv(cloud.data(), cloudSize, MPI_DOUBLE, 1, 0, global, &status);
                 } else {
-                    MPI_Recv(grid.data(), gridSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
-                    MPI_Recv(cloud.data(), cloudSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, &status);
+                    MPI_Recv(grid.data(), gridSize, MPI_DOUBLE, 1, 0, global, &status);
+                    MPI_Recv(cloud.data(), cloudSize, MPI_DOUBLE, 1, 0, global, &status);
                 }
             }
             myScreen.clear(sf::Color::Black);
@@ -227,13 +243,13 @@ int main( int nargs, char* argv[] )
     {
         while (running) {
             int flag = 0;
-            MPI_Iprobe(0, 0, MPI_COMM_WORLD, &flag, &status);
+            MPI_Iprobe(0, 0, global, &flag, &status);
             if (flag)
             {
-                MPI_Recv(&animate, 1, MPI_CXX_BOOL, 0, 0, MPI_COMM_WORLD, &status);
-                MPI_Recv(&advance, 1, MPI_CXX_BOOL, 0, 0, MPI_COMM_WORLD, &status);
-                MPI_Recv(&running, 1, MPI_CXX_BOOL, 0, 0, MPI_COMM_WORLD, &status);
-                MPI_Recv(&dt, 1, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &status);
+                MPI_Recv(&animate, 1, MPI_CXX_BOOL, 0, 0, global, &status);
+                MPI_Recv(&advance, 1, MPI_CXX_BOOL, 0, 0, global, &status);
+                MPI_Recv(&running, 1, MPI_CXX_BOOL, 0, 0, global, &status);
+                MPI_Recv(&dt, 1, MPI_DOUBLE, 0, 0, global, &status);
 
                 if (!running)
                     break;
@@ -242,18 +258,20 @@ int main( int nargs, char* argv[] )
             if (animate | advance) {
                 if (isMobile) {
                     cloud = Numeric::solve_RK4_movable_vortices(dt, grid, vortices, cloud);
-                    MPI_Send(grid.data(), gridSize, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
-                    MPI_Send(vortices.data(), vorticesSize, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
-                    MPI_Send(cloud.data(), cloudSize, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+                    MPI_Send(grid.data(), gridSize, MPI_DOUBLE, 0, 0, global);
+                    MPI_Send(vortices.data(), vorticesSize, MPI_DOUBLE, 0, 0, global);
+                    MPI_Send(cloud.data(), cloudSize, MPI_DOUBLE, 0, 0, global);
 
                 } else {
                     cloud = Numeric::solve_RK4_fixed_vortices(dt, grid, cloud);
-                    MPI_Send(grid.data(), gridSize, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
-                    MPI_Send(cloud.data(), cloudSize, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+                    MPI_Send(grid.data(), gridSize, MPI_DOUBLE, 0, 0, global);
+                    MPI_Send(cloud.data(), cloudSize, MPI_DOUBLE, 0, 0, global);
 
                 }
             }
         }
+    }else{
+        
     }
     MPI_Finalize();
     return EXIT_SUCCESS;

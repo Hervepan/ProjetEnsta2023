@@ -3,6 +3,7 @@
 #include <vector>
 #include <cassert>
 #include <algorithm>
+#include <omp.h>
 #include "point.hpp"
 #include "rectangle.hpp"
 
