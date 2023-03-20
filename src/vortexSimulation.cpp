@@ -225,11 +225,7 @@ int main( int nargs, char* argv[] )
     }
     else if (rank == 1)
     {
-        std::chrono::duration<double> calcDura{};
-        std::chrono::duration<double> calcAndSendDura{};
-
         while (running) {
-            auto start = std::chrono::system_clock::now();
             int flag = 0;
             MPI_Iprobe(0, 0, MPI_COMM_WORLD, &flag, &status);
             if (flag)
@@ -257,9 +253,6 @@ int main( int nargs, char* argv[] )
 
                 }
             }
-            auto end = std::chrono::system_clock::now();
-            std::chrono::duration<double> diff = end - start;
-
         }
     }
     MPI_Finalize();
