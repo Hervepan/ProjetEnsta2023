@@ -100,7 +100,6 @@ namespace Numeric
         {
             return m_velocityField[iCell*m_width+jCell];
         }
-
         point updatePosition( point const& pt ) const;
 
         vector computeVelocityFor( point const& p ) const;

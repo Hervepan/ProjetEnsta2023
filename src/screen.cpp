@@ -129,7 +129,6 @@ Graphisme::Screen::displayParticles( Numeric::CartesianGridOfSpeed const& grid, 
     }
     assert(m_particles.getVertexCount() == points.numberOfPoints());
     // Affichage des particules en 3/4 transparents :
-    #pragma omp parallel for 
     for (std::size_t iPt=0; iPt<points.numberOfPoints(); ++iPt)
     {
         m_particles[iPt].position = sf::Vector2f{

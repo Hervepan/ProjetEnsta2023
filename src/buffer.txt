@@ -1,19 +1,1 @@
 MPI_Bcast(&running, 1, MPI_CXX_BOOL,0, MPI_COMM_WORLD);
-
-
- #pragma omp parallel for 
-    for ( std::size_t iPoint=0; iPoint<t_points.numberOfPoints(); ++iPoint)
-    {
-        point  p = t_points[iPoint];
-        vector v1 = t_velocity.computeVelocityFor(p);
-        point p1 = p + 0.5*dt*v1;
-        p1 = t_velocity.updatePosition(p1);
-        vector v2 = t_velocity.computeVelocityFor(p1);
-        point p2 = p + 0.5*dt*v2;
-        p2 = t_velocity.updatePosition(p2);
-        vector v3 = t_velocity.computeVelocityFor(p2);
-        point p3 = p + dt*v3;
-        p3 = t_velocity.updatePosition(p3);
-        vector v4 = t_velocity.computeVelocityFor(p3);
-        newCloud[iPoint] = t_velocity.updatePosition(p + onesixth*dt*(v1+2.*v2+2.*v3+v4));
-    }

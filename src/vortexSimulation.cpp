@@ -138,16 +138,28 @@ int main( int nargs, char* argv[] )
 
     grid.updateVelocityField(vortices);
 
-    int gridSize = grid.cellGeometry().first * grid.cellGeometry().second;
-    int vorticesSize = vortices.numberOfVortices()*3;
-    int cloudSize = cloud.numberOfPoints()*2;
+    int gridSize = 2*std::get<0>(grid.cellGeometry())*std::get<1>(grid.cellGeometry()); // Each cell contains the speed vector (x2)
+    int vorticesSize = vortices.numberOfVortices()*3; // a vortices is defined by coordinates + intensity (x3)
+    int cloudSize = cloud.numberOfPoints()*2; // a point is two coordinates (x2)
+    
+    std::vector<int> batchSizes(calcSize, cloudSize/calcSize);
 
-    //We calculate the size of the uneven batch in case the number of points is not dividable by the number of process 
+    //We calculate the size of the uneven batch in case the number of points is not divisible by the number of process 
     int unevenBatch= cloudSize - ((int) cloudSize/calcSize)*(calcSize - 1);
+    batchSizes[0] = unevenBatch;
+
+
+    //We have to store the displacement because of the unevenBatch we can't use scatter 
+    std::vector<int> displs(calcSize, 0);
+    for (int i = 1; i < size - 1; i ++) {
+        displs[i] = displs[i - 1] + batchSizes[i - 1];
+    }
 
     grid.updateVelocityField(vortices);
     bool advance = false;
     bool animate=false;
+
+    //Running is here to coordinates all the process and to know when we have to stop
     bool running=true;
     double dt = 0.1;
 
@@ -202,6 +214,7 @@ int main( int nargs, char* argv[] )
                     send = true;
                 }
 
+                //If send is true, we send all the variable needed for calculation to the process 1 
                 if (send)
                 {
                     MPI_Isend(&animate, 1, MPI_CXX_BOOL, 1, 0, global, &request);
@@ -217,13 +230,13 @@ int main( int nargs, char* argv[] )
                 }
             }
             if (animate | advance) {
-                // get the next state
+                // We get back the state calculated by the other process. If the vortices aren't moving we don't need to get the grid or the vortices data 
+
                 if (isMobile) {
-                    MPI_Recv(grid.data(), gridSize, MPI_DOUBLE, 1, 0, global, &status);
-                    MPI_Recv(vortices.data(), vorticesSize, MPI_DOUBLE, 1, 0, global, &status);
+                    MPI_Bcast(grid.data(), gridSize, MPI_DOUBLE, 1, global);
+                    MPI_Bcast(vortices.data(), vorticesSize, MPI_DOUBLE, 1, global);
                     MPI_Recv(cloud.data(), cloudSize, MPI_DOUBLE, 1, 0, global, &status);
                 } else {
-                    MPI_Recv(grid.data(), gridSize, MPI_DOUBLE, 1, 0, global, &status);
                     MPI_Recv(cloud.data(), cloudSize, MPI_DOUBLE, 1, 0, global, &status);
                 }
             }
@@ -239,10 +252,14 @@ int main( int nargs, char* argv[] )
             myScreen.display();
         }
     }
+    // He will take care of dispatching the work 
     else if (rank == 1)
     {
+
+
         while (running) {
             int flag = 0;
+            //We receive the informations that we need from process 0
             MPI_Iprobe(0, 0, global, &flag, &status);
             if (flag)
             {
@@ -256,23 +273,70 @@ int main( int nargs, char* argv[] )
             }
 
             if (animate | advance) {
+                //We send to all the other process that are in the calcul communicator
+                MPI_Bcast(&running, 1, MPI_CXX_BOOL, 0, calcul);
+                MPI_Bcast(&dt, 1, MPI_DOUBLE, 0, calcul);
+
+                //get the size of the local batch
+                int localSize = batchSizes[calcRank];
+
+                Geometry::CloudOfPoints local_cloud(localSize);
+
+                //Scatter everything to all the other processes 
+                MPI_Scatterv(cloud.data(), batchSizes.data(), displs.data(), MPI_DOUBLE,
+                             local_cloud.data(), localSize, MPI_DOUBLE, 0, calcul);
+
+                Geometry::CloudOfPoints new_local_cloud(localSize);
+
                 if (isMobile) {
-                    cloud = Numeric::solve_RK4_movable_vortices(dt, grid, vortices, cloud);
-                    MPI_Send(grid.data(), gridSize, MPI_DOUBLE, 0, 0, global);
-                    MPI_Send(vortices.data(), vorticesSize, MPI_DOUBLE, 0, 0, global);
-                    MPI_Send(cloud.data(), cloudSize, MPI_DOUBLE, 0, 0, global);
-
+                    new_local_cloud = Numeric::solve_RK4_movable_vortices(dt, grid, vortices, local_cloud);
                 } else {
-                    cloud = Numeric::solve_RK4_fixed_vortices(dt, grid, cloud);
-                    MPI_Send(grid.data(), gridSize, MPI_DOUBLE, 0, 0, global);
-                    MPI_Send(cloud.data(), cloudSize, MPI_DOUBLE, 0, 0, global);
+                    new_local_cloud = Numeric::solve_RK4_fixed_vortices(dt, grid, local_cloud);
+                }
 
+                MPI_Gatherv(new_local_cloud.data(), localSize, MPI_DOUBLE, cloud.data(), batchSizes.data(),
+                            displs.data(), MPI_DOUBLE, 0, calcul);
+
+                // send back grid, vortices (to everyone) and cloud to the display
+                if (isMobile) {
+                    MPI_Bcast(grid.data(), gridSize, MPI_DOUBLE,  1, global);
+                    MPI_Bcast(vortices.data(), vorticesSize, MPI_DOUBLE, 1, global);
+                    MPI_Isend(cloud.data(), cloudSize, MPI_DOUBLE, 0, 0, global, &request);
+                } else {
+                    MPI_Isend(cloud.data(), cloudSize, MPI_DOUBLE, 0, 0, global, &request);
                 }
             }
         }
     }else{
-        
+
+        while (running)
+        {
+            MPI_Bcast(&running, 1, MPI_CXX_BOOL, 0, calcul);
+            if (!running)
+                break;
+            MPI_Bcast(&dt, 1, MPI_DOUBLE, 0, calcul);
+
+            // receive particules
+            int localSize = batchSizes[calcRank];
+            Geometry::CloudOfPoints local_cloud(localSize);
+            MPI_Scatterv(cloud.data(), batchSizes.data(), displs.data(), MPI_DOUBLE,
+                         local_cloud.data(), localSize, MPI_DOUBLE, 0, calcul);
+
+            // compute particules
+            auto new_local_cloud = Numeric::solve_RK4_fixed_vortices(dt, grid, local_cloud);
+
+            // send back particules
+            MPI_Gatherv(new_local_cloud.data(), localSize, MPI_DOUBLE, cloud.data(), batchSizes.data(),
+                        displs.data(), MPI_DOUBLE, 0, calcul);
+
+            // get updated grid and vortices
+            if (isMobile) {
+                MPI_Bcast(grid.data(), gridSize, MPI_DOUBLE, 1, global);
+                MPI_Bcast(vortices.data(), vorticesSize, MPI_DOUBLE, 1, global);
+            }
+        }
     }
+        
     MPI_Finalize();
     return EXIT_SUCCESS;
  }
